@@ -155,11 +155,8 @@ static char *ngx_http_mytest_merge_loc_conf(ngx_conf_t *cf, void *parent, void *
 static ngx_int_t
 mytest_upstream_create_request(ngx_http_request_t *r)
 {
-    //发往google上游服务器的请求很简单，就是模仿正常的搜索请求，
-//以/search?q=…的URL来发起搜索请求。backendQueryLine中的%V等转化
-//格式的用法，请参见4.4节中的表4-7
     static ngx_str_t backendQueryLine =
-        ngx_string("GET /search?q=%V HTTP/1.1\r\nHost: www.google.com\r\nConnection: close\r\n\r\n");
+        ngx_string("GET / HTTP/1.1\r\nHost: 192.168.70.29\r\nConnection: close\r\n\r\n");
     ngx_int_t queryLineLen = backendQueryLine.len + r->args.len - 2;
     //必须由内存池中申请内存，这有两点好处：在网络情况不佳的情况下，向上游
 //服务器发送请求时，可能需要epoll多次调度send发送才能完成，
@@ -449,38 +446,59 @@ ngx_http_mytest_handler(ngx_http_request_t *r)
     //决定转发包体时使用的缓冲区
     u->buffering = mycf->upstream.buffering;
 
-    //以下代码开始初始化resolved结构体，用来保存上游服务器的地址
-    u->resolved = (ngx_http_upstream_resolved_t*) ngx_pcalloc(r->pool, sizeof(ngx_http_upstream_resolved_t));
-    if (u->resolved == NULL)
-    {
+
+    ngx_url_t url;
+    ngx_memzero(&url, sizeof(ngx_url_t));
+    ngx_str_t urlstr = ngx_string("192.168.70.29:80");
+    url.url = urlstr;
+    url.default_port = 80;
+
+    if (ngx_parse_url(r->pool, &url) != NGX_OK) {
+        if (url.err) {
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                          "%s in upstream \"%V\"", url.err, &url.url);
+        }
+
+        return NGX_ERROR;
+    }
+    
+    u_char *p;
+    if (url.uri.len) {
+        if (url.uri.data[0] == '?') {
+            p = ngx_pnalloc(r->pool, url.uri.len + 1);
+            if (p == NULL) {
+                return NGX_ERROR;
+            }
+
+            *p++ = '/';
+            ngx_memcpy(p, url.uri.data, url.uri.len);
+
+            url.uri.len++;
+            url.uri.data = p - 1;
+        }
+    }
+
+    u->resolved = ngx_pcalloc(r->pool, sizeof(ngx_http_upstream_resolved_t));
+    if (u->resolved == NULL) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                       "ngx_pcalloc resolved error. %s.", strerror(errno));
         return NGX_ERROR;
     }
 
-    //这里的上游服务器就是www.google.com
-    static struct sockaddr_in backendSockAddr;
-    struct hostent *pHost = gethostbyname((char*) "www.google.com");
-    if (pHost == NULL)
-    {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "gethostbyname fail. %s", strerror(errno));
-
-        return NGX_ERROR;
+    if (url.addrs) {
+        u->resolved->sockaddr = url.addrs[0].sockaddr;
+        u->resolved->socklen = url.addrs[0].socklen;
+        u->resolved->name = url.addrs[0].name;
+        u->resolved->naddrs = 1;
     }
 
-    //访问上游服务器的80端口
-    backendSockAddr.sin_family = AF_INET;
-    backendSockAddr.sin_port = htons((in_port_t) 80);
-    char* pDmsIP = inet_ntoa(*(struct in_addr*) (pHost->h_addr_list[0]));
-    backendSockAddr.sin_addr.s_addr = inet_addr(pDmsIP);
-    myctx->backendServer.data = (u_char*)pDmsIP;
-    myctx->backendServer.len = strlen(pDmsIP);
+    u->resolved->host = url.host;
+    u_short port = 80;
+    u->resolved->port = (in_port_t) (url.no_port ? port : url.port);
+    u->resolved->no_port = url.no_port;
 
-    //将地址设置到resolved成员中
-    u->resolved->sockaddr = (struct sockaddr *)&backendSockAddr;
-    u->resolved->socklen = sizeof(struct sockaddr_in);
-    u->resolved->naddrs = 1;
+    myctx->backendServer= url.host;
+
 
     //设置三个必须实现的回调方法，也就是5.3.3节至5.3.5节中实现的3个方法
     u->create_request = mytest_upstream_create_request;
