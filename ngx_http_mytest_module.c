@@ -155,34 +155,39 @@ static char *ngx_http_mytest_merge_loc_conf(ngx_conf_t *cf, void *parent, void *
 static ngx_int_t
 mytest_upstream_create_request(ngx_http_request_t *r)
 {
-    static ngx_str_t backendQueryLine =
-        ngx_string("GET / HTTP/1.1\r\nHost: 192.168.70.29\r\nConnection: close\r\n\r\n");
-    ngx_int_t queryLineLen = backendQueryLine.len + r->args.len - 2;
+    static ngx_str_t backendQueryLine = ngx_string("GET / HTTP/1.1\r\nHost: www.sina.com.cn\r\nConnection: close\r\n\r\n");
+    //ngx_int_t queryLineLen = backendQueryLine.len ;
     //必须由内存池中申请内存，这有两点好处：在网络情况不佳的情况下，向上游
 //服务器发送请求时，可能需要epoll多次调度send发送才能完成，
 //这时必须保证这段内存不会被释放；请求结束时，这段内存会被自动释放，
 //降低内存泄漏的可能
-    ngx_buf_t* b = ngx_create_temp_buf(r->pool, queryLineLen);
+    ngx_buf_t* b = ngx_create_temp_buf(r->pool, backendQueryLine.len);
     if (b == NULL)
         return NGX_ERROR;
+
+    b->last = ngx_copy(b->last, backendQueryLine.data, backendQueryLine.len);
+    //*b->last++ = CR; *b->last++ = LF;
     //last要指向请求的末尾
-    b->last = b->pos + queryLineLen;
+    //b->last = b->pos + queryLineLen;
 
     //作用相当于snprintf，只是它支持4.4节中的表4-7列出的所有转换格式
-    ngx_snprintf(b->pos, queryLineLen ,
-                 (char*)backendQueryLine.data, &r->args);
+    //ngx_snprintf(b->pos, queryLineLen , (char*)backendQueryLine.data, &r->args);
     // r->upstream->request_bufs是一个ngx_chain_t结构，它包含着要
 //发送给上游服务器的请求
-    r->upstream->request_bufs = ngx_alloc_chain_link(r->pool);
-    if (r->upstream->request_bufs == NULL)
+
+    ngx_chain_t                  *cl;
+    cl = ngx_alloc_chain_link(r->pool);
+    if (cl == NULL) {
         return NGX_ERROR;
+    }
 
-    // request_bufs这里只包含1个ngx_buf_t缓冲区
-    r->upstream->request_bufs->buf = b;
-    r->upstream->request_bufs->next = NULL;
+    cl->buf = b;
+    r->upstream->request_bufs = cl;
+    cl->next = NULL;
 
-    r->upstream->request_sent = 0;
-    r->upstream->header_sent = 0;
+    b->flush = 1;
+    //r->upstream->request_sent = 0;
+    //r->upstream->header_sent = 0;
     // header_hash不可以为0
     r->header_hash = 1;
     return NGX_OK;
@@ -449,7 +454,7 @@ ngx_http_mytest_handler(ngx_http_request_t *r)
 
     ngx_url_t url;
     ngx_memzero(&url, sizeof(ngx_url_t));
-    ngx_str_t urlstr = ngx_string("192.168.70.29:80");
+    ngx_str_t urlstr = ngx_string("www.sina.com.cn");
     url.url = urlstr;
     url.default_port = 80;
 
