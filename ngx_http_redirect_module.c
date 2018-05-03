@@ -6,26 +6,27 @@
 typedef struct
 {
     ngx_http_status_t           status;
-    ngx_str_t					backendServer;
-} ngx_http_backend_ctx_t;
+    ngx_str_t					redirectServer;
+} ngx_http_redirect_ctx_t;
 
 typedef struct
 {
     ngx_http_upstream_conf_t upstream;
-} ngx_http_backend_conf_t;
+    ngx_str_t addr;
+} ngx_http_redirect_conf_t;
 
 
 static char *
-ngx_http_backend(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+ngx_http_redirect(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
-static ngx_int_t ngx_http_backend_handler(ngx_http_request_t *r);
-static void* ngx_http_backend_create_loc_conf(ngx_conf_t *cf);
-static char *ngx_http_backend_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
+static ngx_int_t ngx_http_redirect_handler(ngx_http_request_t *r);
+static void* ngx_http_redirect_create_loc_conf(ngx_conf_t *cf);
+static char *ngx_http_redirect_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 
 static ngx_int_t
-backend_upstream_process_header(ngx_http_request_t *r);
+redirect_upstream_process_header(ngx_http_request_t *r);
 static ngx_int_t
-backend_process_status_line(ngx_http_request_t *r);
+redirect_process_status_line(ngx_http_request_t *r);
 
 
 static ngx_str_t  ngx_http_proxy_hide_headers[] =
@@ -42,22 +43,22 @@ static ngx_str_t  ngx_http_proxy_hide_headers[] =
 };
 
 
-static ngx_command_t  ngx_http_backend_commands[] =
+static ngx_command_t  ngx_http_redirect_commands[] =
 {
 
     {
-        ngx_string("backend"),
-        NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LMT_CONF | NGX_CONF_NOARGS,
-        ngx_http_backend,
+        ngx_string("redirect"),
+        NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LMT_CONF | NGX_CONF_TAKE1,
+        ngx_http_redirect,
         NGX_HTTP_LOC_CONF_OFFSET,
-        0,
+        offsetof(ngx_http_redirect_conf_t, addr),
         NULL
     },
 
     ngx_null_command
 };
 
-static ngx_http_module_t  ngx_http_backend_module_ctx =
+static ngx_http_module_t  ngx_http_redirect_module_ctx =
 {
     NULL,                              /* preconfiguration */
     NULL,                        	   /* postconfiguration */
@@ -68,15 +69,15 @@ static ngx_http_module_t  ngx_http_backend_module_ctx =
     NULL,                              /* create server configuration */
     NULL,                              /* merge server configuration */
 
-    ngx_http_backend_create_loc_conf,   /* create location configuration */
-    ngx_http_backend_merge_loc_conf     /* merge location configuration */
+    ngx_http_redirect_create_loc_conf,   /* create location configuration */
+    ngx_http_redirect_merge_loc_conf     /* merge location configuration */
 };
 
-ngx_module_t  ngx_http_backend_module =
+ngx_module_t  ngx_http_redirect_module =
 {
     NGX_MODULE_V1,
-    &ngx_http_backend_module_ctx,           /* module context */
-    ngx_http_backend_commands,              /* module directives */
+    &ngx_http_redirect_module_ctx,           /* module context */
+    ngx_http_redirect_commands,              /* module directives */
     NGX_HTTP_MODULE,                       /* module type */
     NULL,                                  /* init master */
     NULL,                                  /* init module */
@@ -89,11 +90,11 @@ ngx_module_t  ngx_http_backend_module =
 };
 
 
-static void* ngx_http_backend_create_loc_conf(ngx_conf_t *cf)
+static void* ngx_http_redirect_create_loc_conf(ngx_conf_t *cf)
 {
-    ngx_http_backend_conf_t  *mycf;
+    ngx_http_redirect_conf_t  *mycf;
 
-    mycf = (ngx_http_backend_conf_t  *)ngx_pcalloc(cf->pool, sizeof(ngx_http_backend_conf_t));
+    mycf = (ngx_http_redirect_conf_t  *)ngx_pcalloc(cf->pool, sizeof(ngx_http_redirect_conf_t));
     if (mycf == NULL)
     {
         return NULL;
@@ -127,15 +128,16 @@ static void* ngx_http_backend_create_loc_conf(ngx_conf_t *cf)
     //方法初始化hide_headers 成员
     mycf->upstream.hide_headers = NGX_CONF_UNSET_PTR;
     mycf->upstream.pass_headers = NGX_CONF_UNSET_PTR;
-
+    
+    //mycf->addr = {0, NULL};
     return mycf;
 }
 
 
-static char *ngx_http_backend_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+static char *ngx_http_redirect_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
-    ngx_http_backend_conf_t *prev = (ngx_http_backend_conf_t *)parent;
-    ngx_http_backend_conf_t *conf = (ngx_http_backend_conf_t *)child;
+    ngx_http_redirect_conf_t *prev = (ngx_http_redirect_conf_t *)parent;
+    ngx_http_redirect_conf_t *conf = (ngx_http_redirect_conf_t *)child;
 
     ngx_hash_init_t             hash;
     hash.max_size = 100;
@@ -147,31 +149,32 @@ static char *ngx_http_backend_merge_loc_conf(ngx_conf_t *cf, void *parent, void 
     {
         return NGX_CONF_ERROR;
     }
+    ngx_conf_merge_str_value(conf->addr, conf->addr, ""); 
 
     return NGX_CONF_OK;
 }
 
 
 static ngx_int_t
-backend_upstream_create_request(ngx_http_request_t *r)
+redirect_upstream_create_request(ngx_http_request_t *r)
 {
-    static ngx_str_t backendQueryLine = ngx_string("GET / HTTP/1.1\r\nHost: www.sina.com.cn\r\nConnection: close\r\n\r\n");
-    //ngx_int_t queryLineLen = backendQueryLine.len ;
+    static ngx_str_t redirectQueryLine = ngx_string("GET / HTTP/1.1\r\nHost: www.sina.com.cn\r\nConnection: close\r\n\r\n");
+    //ngx_int_t queryLineLen = redirectQueryLine.len ;
     //必须由内存池中申请内存，这有两点好处：在网络情况不佳的情况下，向上游
     //服务器发送请求时，可能需要epoll多次调度send发送才能完成，
     //这时必须保证这段内存不会被释放；请求结束时，这段内存会被自动释放，
     //降低内存泄漏的可能
-    ngx_buf_t* b = ngx_create_temp_buf(r->pool, backendQueryLine.len);
+    ngx_buf_t* b = ngx_create_temp_buf(r->pool, redirectQueryLine.len);
     if (b == NULL)
         return NGX_ERROR;
 
-    b->last = ngx_copy(b->last, backendQueryLine.data, backendQueryLine.len);
+    b->last = ngx_copy(b->last, redirectQueryLine.data, redirectQueryLine.len);
     //*b->last++ = CR; *b->last++ = LF;
     //last要指向请求的末尾
     //b->last = b->pos + queryLineLen;
 
     //作用相当于snprintf，只是它支持4.4节中的表4-7列出的所有转换格式
-    //ngx_snprintf(b->pos, queryLineLen , (char*)backendQueryLine.data, &r->args);
+    //ngx_snprintf(b->pos, queryLineLen , (char*)redirectQueryLine.data, &r->args);
     // r->upstream->request_bufs是一个ngx_chain_t结构，它包含着要
     //发送给上游服务器的请求
 
@@ -194,14 +197,14 @@ backend_upstream_create_request(ngx_http_request_t *r)
 }
 
 static ngx_int_t
-backend_process_status_line(ngx_http_request_t *r)
+redirect_process_status_line(ngx_http_request_t *r)
 {
     size_t                 len;
     ngx_int_t              rc;
     ngx_http_upstream_t   *u;
 
     //上下文中才会保存多次解析http响应行的状态，首先取出请求的上下文
-    ngx_http_backend_ctx_t* ctx = ngx_http_get_module_ctx(r, ngx_http_backend_module);
+    ngx_http_redirect_ctx_t* ctx = ngx_http_get_module_ctx(r, ngx_http_redirect_module);
     if (ctx == NULL)
     {
         return NGX_ERROR;
@@ -257,18 +260,18 @@ backend_process_status_line(ngx_http_request_t *r)
     ngx_memcpy(u->headers_in.status_line.data, ctx->status.start, len);
 
     //下一步将开始解析http头部，设置process_header回调方法为
-    //backend_upstream_process_header，
-    //之后再收到的新字符流将由backend_upstream_process_header解析
-    u->process_header = backend_upstream_process_header;
+    //redirect_upstream_process_header，
+    //之后再收到的新字符流将由redirect_upstream_process_header解析
+    u->process_header = redirect_upstream_process_header;
 
     //如果本次收到的字符流除了http响应行外，还有多余的字符，
-    //将由backend_upstream_process_header方法解析
-    return backend_upstream_process_header(r);
+    //将由redirect_upstream_process_header方法解析
+    return redirect_upstream_process_header(r);
 }
 
 
 static ngx_int_t
-backend_upstream_process_header(ngx_http_request_t *r)
+redirect_upstream_process_header(ngx_http_request_t *r)
 {
     ngx_int_t                       rc;
     ngx_table_elt_t                *h;
@@ -394,37 +397,37 @@ backend_upstream_process_header(ngx_http_request_t *r)
 }
 
 static void
-backend_upstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
+redirect_upstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 {
     ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
-                  "backend_upstream_finalize_request");
+                  "redirect_upstream_finalize_request");
 }
 
 
 static char *
-ngx_http_backend(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+ngx_http_redirect(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_core_loc_conf_t  *clcf;
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-    clcf->handler = ngx_http_backend_handler;
+    clcf->handler = ngx_http_redirect_handler;
 
     return NGX_CONF_OK;
 }
 
 
 static ngx_int_t
-ngx_http_backend_handler(ngx_http_request_t *r)
+ngx_http_redirect_handler(ngx_http_request_t *r)
 {
-    ngx_http_backend_ctx_t* myctx = ngx_http_get_module_ctx(r, ngx_http_backend_module);
+    ngx_http_redirect_ctx_t* myctx = ngx_http_get_module_ctx(r, ngx_http_redirect_module);
     if (myctx == NULL)
     {
-        myctx = ngx_palloc(r->pool, sizeof(ngx_http_backend_ctx_t));
+        myctx = ngx_palloc(r->pool, sizeof(ngx_http_redirect_ctx_t));
         if (myctx == NULL)
         {
             return NGX_ERROR;
         }
         //将新建的上下文与请求关联起来
-        ngx_http_set_ctx(r, myctx, ngx_http_backend_module);
+        ngx_http_set_ctx(r, myctx, ngx_http_redirect_module);
     }
     //对每1个要使用upstream的请求，必须调用且只能调用1次
     //ngx_http_upstream_create方法，它会初始化r->upstream成员
@@ -434,8 +437,8 @@ ngx_http_backend_handler(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
-    //得到配置结构体ngx_http_backend_conf_t
-    ngx_http_backend_conf_t  *mycf = (ngx_http_backend_conf_t  *) ngx_http_get_module_loc_conf(r, ngx_http_backend_module);
+    //得到配置结构体ngx_http_redirect_conf_t
+    ngx_http_redirect_conf_t  *mycf = (ngx_http_redirect_conf_t  *) ngx_http_get_module_loc_conf(r, ngx_http_redirect_module);
     ngx_http_upstream_t *u = r->upstream;
     //这里用配置文件中的结构体来赋给r->upstream->conf成员
     u->conf = &mycf->upstream;
@@ -445,8 +448,7 @@ ngx_http_backend_handler(ngx_http_request_t *r)
 
     ngx_url_t url;
     ngx_memzero(&url, sizeof(ngx_url_t));
-    ngx_str_t urlstr = ngx_string("www.sina.com.cn");
-    url.url = urlstr;
+    url.url = mycf->addr;
     url.default_port = 80;
 
     if (ngx_parse_url(r->pool, &url) != NGX_OK) {
@@ -493,13 +495,13 @@ ngx_http_backend_handler(ngx_http_request_t *r)
     u->resolved->port = (in_port_t) (url.no_port ? port : url.port);
     u->resolved->no_port = url.no_port;
 
-    myctx->backendServer= url.host;
+    myctx->redirectServer= url.host;
 
 
     //设置三个必须实现的回调方法，也就是5.3.3节至5.3.5节中实现的3个方法
-    u->create_request = backend_upstream_create_request;
-    u->process_header = backend_process_status_line;
-    u->finalize_request = backend_upstream_finalize_request;
+    u->create_request = redirect_upstream_create_request;
+    u->process_header = redirect_process_status_line;
+    u->finalize_request = redirect_upstream_finalize_request;
 
     //这里必须将count成员加1，理由见5.1.5节
     r->main->count++;
