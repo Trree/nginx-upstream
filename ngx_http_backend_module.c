@@ -7,25 +7,25 @@ typedef struct
 {
     ngx_http_status_t           status;
     ngx_str_t					backendServer;
-} ngx_http_mytest_ctx_t;
+} ngx_http_backend_ctx_t;
 
 typedef struct
 {
     ngx_http_upstream_conf_t upstream;
-} ngx_http_mytest_conf_t;
+} ngx_http_backend_conf_t;
 
 
 static char *
-ngx_http_mytest(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+ngx_http_backend(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
-static ngx_int_t ngx_http_mytest_handler(ngx_http_request_t *r);
-static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf);
-static char *ngx_http_mytest_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
+static ngx_int_t ngx_http_backend_handler(ngx_http_request_t *r);
+static void* ngx_http_backend_create_loc_conf(ngx_conf_t *cf);
+static char *ngx_http_backend_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 
 static ngx_int_t
-mytest_upstream_process_header(ngx_http_request_t *r);
+backend_upstream_process_header(ngx_http_request_t *r);
 static ngx_int_t
-mytest_process_status_line(ngx_http_request_t *r);
+backend_process_status_line(ngx_http_request_t *r);
 
 
 static ngx_str_t  ngx_http_proxy_hide_headers[] =
@@ -42,13 +42,13 @@ static ngx_str_t  ngx_http_proxy_hide_headers[] =
 };
 
 
-static ngx_command_t  ngx_http_mytest_commands[] =
+static ngx_command_t  ngx_http_backend_commands[] =
 {
 
     {
-        ngx_string("mytest"),
+        ngx_string("backend"),
         NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_HTTP_LMT_CONF | NGX_CONF_NOARGS,
-        ngx_http_mytest,
+        ngx_http_backend,
         NGX_HTTP_LOC_CONF_OFFSET,
         0,
         NULL
@@ -57,7 +57,7 @@ static ngx_command_t  ngx_http_mytest_commands[] =
     ngx_null_command
 };
 
-static ngx_http_module_t  ngx_http_mytest_module_ctx =
+static ngx_http_module_t  ngx_http_backend_module_ctx =
 {
     NULL,                              /* preconfiguration */
     NULL,                        	   /* postconfiguration */
@@ -68,15 +68,15 @@ static ngx_http_module_t  ngx_http_mytest_module_ctx =
     NULL,                              /* create server configuration */
     NULL,                              /* merge server configuration */
 
-    ngx_http_mytest_create_loc_conf,   /* create location configuration */
-    ngx_http_mytest_merge_loc_conf     /* merge location configuration */
+    ngx_http_backend_create_loc_conf,   /* create location configuration */
+    ngx_http_backend_merge_loc_conf     /* merge location configuration */
 };
 
-ngx_module_t  ngx_http_mytest_module =
+ngx_module_t  ngx_http_backend_module =
 {
     NGX_MODULE_V1,
-    &ngx_http_mytest_module_ctx,           /* module context */
-    ngx_http_mytest_commands,              /* module directives */
+    &ngx_http_backend_module_ctx,           /* module context */
+    ngx_http_backend_commands,              /* module directives */
     NGX_HTTP_MODULE,                       /* module type */
     NULL,                                  /* init master */
     NULL,                                  /* init module */
@@ -89,11 +89,11 @@ ngx_module_t  ngx_http_mytest_module =
 };
 
 
-static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf)
+static void* ngx_http_backend_create_loc_conf(ngx_conf_t *cf)
 {
-    ngx_http_mytest_conf_t  *mycf;
+    ngx_http_backend_conf_t  *mycf;
 
-    mycf = (ngx_http_mytest_conf_t  *)ngx_pcalloc(cf->pool, sizeof(ngx_http_mytest_conf_t));
+    mycf = (ngx_http_backend_conf_t  *)ngx_pcalloc(cf->pool, sizeof(ngx_http_backend_conf_t));
     if (mycf == NULL)
     {
         return NULL;
@@ -132,10 +132,10 @@ static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf)
 }
 
 
-static char *ngx_http_mytest_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+static char *ngx_http_backend_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
-    ngx_http_mytest_conf_t *prev = (ngx_http_mytest_conf_t *)parent;
-    ngx_http_mytest_conf_t *conf = (ngx_http_mytest_conf_t *)child;
+    ngx_http_backend_conf_t *prev = (ngx_http_backend_conf_t *)parent;
+    ngx_http_backend_conf_t *conf = (ngx_http_backend_conf_t *)child;
 
     ngx_hash_init_t             hash;
     hash.max_size = 100;
@@ -153,7 +153,7 @@ static char *ngx_http_mytest_merge_loc_conf(ngx_conf_t *cf, void *parent, void *
 
 
 static ngx_int_t
-mytest_upstream_create_request(ngx_http_request_t *r)
+backend_upstream_create_request(ngx_http_request_t *r)
 {
     static ngx_str_t backendQueryLine = ngx_string("GET / HTTP/1.1\r\nHost: www.sina.com.cn\r\nConnection: close\r\n\r\n");
     //ngx_int_t queryLineLen = backendQueryLine.len ;
@@ -194,14 +194,14 @@ mytest_upstream_create_request(ngx_http_request_t *r)
 }
 
 static ngx_int_t
-mytest_process_status_line(ngx_http_request_t *r)
+backend_process_status_line(ngx_http_request_t *r)
 {
     size_t                 len;
     ngx_int_t              rc;
     ngx_http_upstream_t   *u;
 
     //上下文中才会保存多次解析http响应行的状态，首先取出请求的上下文
-    ngx_http_mytest_ctx_t* ctx = ngx_http_get_module_ctx(r, ngx_http_mytest_module);
+    ngx_http_backend_ctx_t* ctx = ngx_http_get_module_ctx(r, ngx_http_backend_module);
     if (ctx == NULL)
     {
         return NGX_ERROR;
@@ -257,18 +257,18 @@ mytest_process_status_line(ngx_http_request_t *r)
     ngx_memcpy(u->headers_in.status_line.data, ctx->status.start, len);
 
     //下一步将开始解析http头部，设置process_header回调方法为
-    //mytest_upstream_process_header，
-    //之后再收到的新字符流将由mytest_upstream_process_header解析
-    u->process_header = mytest_upstream_process_header;
+    //backend_upstream_process_header，
+    //之后再收到的新字符流将由backend_upstream_process_header解析
+    u->process_header = backend_upstream_process_header;
 
     //如果本次收到的字符流除了http响应行外，还有多余的字符，
-    //将由mytest_upstream_process_header方法解析
-    return mytest_upstream_process_header(r);
+    //将由backend_upstream_process_header方法解析
+    return backend_upstream_process_header(r);
 }
 
 
 static ngx_int_t
-mytest_upstream_process_header(ngx_http_request_t *r)
+backend_upstream_process_header(ngx_http_request_t *r)
 {
     ngx_int_t                       rc;
     ngx_table_elt_t                *h;
@@ -394,37 +394,37 @@ mytest_upstream_process_header(ngx_http_request_t *r)
 }
 
 static void
-mytest_upstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
+backend_upstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 {
     ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0,
-                  "mytest_upstream_finalize_request");
+                  "backend_upstream_finalize_request");
 }
 
 
 static char *
-ngx_http_mytest(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+ngx_http_backend(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_core_loc_conf_t  *clcf;
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-    clcf->handler = ngx_http_mytest_handler;
+    clcf->handler = ngx_http_backend_handler;
 
     return NGX_CONF_OK;
 }
 
 
 static ngx_int_t
-ngx_http_mytest_handler(ngx_http_request_t *r)
+ngx_http_backend_handler(ngx_http_request_t *r)
 {
-    ngx_http_mytest_ctx_t* myctx = ngx_http_get_module_ctx(r, ngx_http_mytest_module);
+    ngx_http_backend_ctx_t* myctx = ngx_http_get_module_ctx(r, ngx_http_backend_module);
     if (myctx == NULL)
     {
-        myctx = ngx_palloc(r->pool, sizeof(ngx_http_mytest_ctx_t));
+        myctx = ngx_palloc(r->pool, sizeof(ngx_http_backend_ctx_t));
         if (myctx == NULL)
         {
             return NGX_ERROR;
         }
         //将新建的上下文与请求关联起来
-        ngx_http_set_ctx(r, myctx, ngx_http_mytest_module);
+        ngx_http_set_ctx(r, myctx, ngx_http_backend_module);
     }
     //对每1个要使用upstream的请求，必须调用且只能调用1次
     //ngx_http_upstream_create方法，它会初始化r->upstream成员
@@ -434,8 +434,8 @@ ngx_http_mytest_handler(ngx_http_request_t *r)
         return NGX_ERROR;
     }
 
-    //得到配置结构体ngx_http_mytest_conf_t
-    ngx_http_mytest_conf_t  *mycf = (ngx_http_mytest_conf_t  *) ngx_http_get_module_loc_conf(r, ngx_http_mytest_module);
+    //得到配置结构体ngx_http_backend_conf_t
+    ngx_http_backend_conf_t  *mycf = (ngx_http_backend_conf_t  *) ngx_http_get_module_loc_conf(r, ngx_http_backend_module);
     ngx_http_upstream_t *u = r->upstream;
     //这里用配置文件中的结构体来赋给r->upstream->conf成员
     u->conf = &mycf->upstream;
@@ -497,9 +497,9 @@ ngx_http_mytest_handler(ngx_http_request_t *r)
 
 
     //设置三个必须实现的回调方法，也就是5.3.3节至5.3.5节中实现的3个方法
-    u->create_request = mytest_upstream_create_request;
-    u->process_header = mytest_process_status_line;
-    u->finalize_request = mytest_upstream_finalize_request;
+    u->create_request = backend_upstream_create_request;
+    u->process_header = backend_process_status_line;
+    u->finalize_request = backend_upstream_finalize_request;
 
     //这里必须将count成员加1，理由见5.1.5节
     r->main->count++;
