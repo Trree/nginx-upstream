@@ -60,7 +60,7 @@ static ngx_command_t  ngx_http_mytest_commands[] =
 static ngx_http_module_t  ngx_http_mytest_module_ctx =
 {
     NULL,                              /* preconfiguration */
-    NULL,                  		/* postconfiguration */
+    NULL,                        	   /* postconfiguration */
 
     NULL,                              /* create main configuration */
     NULL,                              /* init main configuration */
@@ -68,8 +68,8 @@ static ngx_http_module_t  ngx_http_mytest_module_ctx =
     NULL,                              /* create server configuration */
     NULL,                              /* merge server configuration */
 
-    ngx_http_mytest_create_loc_conf,       			/* create location configuration */
-    ngx_http_mytest_merge_loc_conf         			/* merge location configuration */
+    ngx_http_mytest_create_loc_conf,   /* create location configuration */
+    ngx_http_mytest_merge_loc_conf     /* merge location configuration */
 };
 
 ngx_module_t  ngx_http_mytest_module =
@@ -100,16 +100,16 @@ static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf)
     }
 
     //以下简单的硬编码ngx_http_upstream_conf_t结构中的各成员，例如
-//超时时间都设为1分钟。这也是http反向代理模块的默认值
+    //超时时间都设为1分钟。这也是http反向代理模块的默认值
     mycf->upstream.connect_timeout = 60000;
     mycf->upstream.send_timeout = 60000;
     mycf->upstream.read_timeout = 60000;
     mycf->upstream.store_access = 0600;
     //实际上buffering已经决定了将以固定大小的内存作为缓冲区来转发上游的
-//响应包体，这块固定缓冲区的大小就是buffer_size。如果buffering为1
-//就会使用更多的内存缓存来不及发往下游的响应，例如最多使用bufs.num个
-//缓冲区、每个缓冲区大小为bufs.size，另外还会使用临时文件，临时文件的
-//最大长度为max_temp_file_size
+    //响应包体，这块固定缓冲区的大小就是buffer_size。如果buffering为1
+    //就会使用更多的内存缓存来不及发往下游的响应，例如最多使用bufs.num个
+    //缓冲区、每个缓冲区大小为bufs.size，另外还会使用临时文件，临时文件的
+    //最大长度为max_temp_file_size
     mycf->upstream.buffering = 0;
     mycf->upstream.bufs.num = 8;
     mycf->upstream.bufs.size = ngx_pagesize;
@@ -119,12 +119,12 @@ static void* ngx_http_mytest_create_loc_conf(ngx_conf_t *cf)
     mycf->upstream.max_temp_file_size = 1024 * 1024 * 1024;
 
     //upstream模块要求hide_headers成员必须要初始化（upstream在解析
-//完上游服务器返回的包头时，会调用
-//ngx_http_upstream_process_headers方法按照hide_headers成员将
-//本应转发给下游的一些http头部隐藏），这里将它赋为
-//NGX_CONF_UNSET_PTR ，是为了在merge合并配置项方法中使用
-//upstream模块提供的ngx_http_upstream_hide_headers_hash
-//方法初始化hide_headers 成员
+    //完上游服务器返回的包头时，会调用
+    //ngx_http_upstream_process_headers方法按照hide_headers成员将
+    //本应转发给下游的一些http头部隐藏），这里将它赋为
+    //NGX_CONF_UNSET_PTR ，是为了在merge合并配置项方法中使用
+    //upstream模块提供的ngx_http_upstream_hide_headers_hash
+    //方法初始化hide_headers 成员
     mycf->upstream.hide_headers = NGX_CONF_UNSET_PTR;
     mycf->upstream.pass_headers = NGX_CONF_UNSET_PTR;
 
@@ -158,9 +158,9 @@ mytest_upstream_create_request(ngx_http_request_t *r)
     static ngx_str_t backendQueryLine = ngx_string("GET / HTTP/1.1\r\nHost: www.sina.com.cn\r\nConnection: close\r\n\r\n");
     //ngx_int_t queryLineLen = backendQueryLine.len ;
     //必须由内存池中申请内存，这有两点好处：在网络情况不佳的情况下，向上游
-//服务器发送请求时，可能需要epoll多次调度send发送才能完成，
-//这时必须保证这段内存不会被释放；请求结束时，这段内存会被自动释放，
-//降低内存泄漏的可能
+    //服务器发送请求时，可能需要epoll多次调度send发送才能完成，
+    //这时必须保证这段内存不会被释放；请求结束时，这段内存会被自动释放，
+    //降低内存泄漏的可能
     ngx_buf_t* b = ngx_create_temp_buf(r->pool, backendQueryLine.len);
     if (b == NULL)
         return NGX_ERROR;
@@ -173,7 +173,7 @@ mytest_upstream_create_request(ngx_http_request_t *r)
     //作用相当于snprintf，只是它支持4.4节中的表4-7列出的所有转换格式
     //ngx_snprintf(b->pos, queryLineLen , (char*)backendQueryLine.data, &r->args);
     // r->upstream->request_bufs是一个ngx_chain_t结构，它包含着要
-//发送给上游服务器的请求
+    //发送给上游服务器的请求
 
     ngx_chain_t                  *cl;
     cl = ngx_alloc_chain_link(r->pool);
@@ -210,10 +210,10 @@ mytest_process_status_line(ngx_http_request_t *r)
     u = r->upstream;
 
     //http框架提供的ngx_http_parse_status_line方法可以解析http
-//响应行，它的输入就是收到的字符流和上下文中的ngx_http_status_t结构
+    //响应行，它的输入就是收到的字符流和上下文中的ngx_http_status_t结构
     rc = ngx_http_parse_status_line(r, &u->buffer, &ctx->status);
     //返回NGX_AGAIN表示还没有解析出完整的http响应行，需要接收更多的
-//字符流再来解析
+    //字符流再来解析
     if (rc == NGX_AGAIN)
     {
         return rc;
@@ -231,13 +231,13 @@ mytest_process_status_line(ngx_http_request_t *r)
     }
 
     //以下表示解析到完整的http响应行，这时会做一些简单的赋值操作，将解析出
-//的信息设置到r->upstream->headers_in结构体中，upstream解析完所
-//有的包头时，就会把headers_in中的成员设置到将要向下游发送的
-//r->headers_out结构体中，也就是说，现在我们向headers_in中设置的
-//信息，最终都会发往下游客户端。为什么不是直接设置r->headers_out而要
-//这样多此一举呢？这是因为upstream希望能够按照
-//ngx_http_upstream_conf_t配置结构体中的hide_headers等成员对
-//发往下游的响应头部做统一处理
+    //的信息设置到r->upstream->headers_in结构体中，upstream解析完所
+    //有的包头时，就会把headers_in中的成员设置到将要向下游发送的
+    //r->headers_out结构体中，也就是说，现在我们向headers_in中设置的
+    //信息，最终都会发往下游客户端。为什么不是直接设置r->headers_out而要
+    //这样多此一举呢？这是因为upstream希望能够按照
+    //ngx_http_upstream_conf_t配置结构体中的hide_headers等成员对
+    //发往下游的响应头部做统一处理
     if (u->state)
     {
         u->state->status = ctx->status.code;
@@ -257,12 +257,12 @@ mytest_process_status_line(ngx_http_request_t *r)
     ngx_memcpy(u->headers_in.status_line.data, ctx->status.start, len);
 
     //下一步将开始解析http头部，设置process_header回调方法为
-//mytest_upstream_process_header，
-//之后再收到的新字符流将由mytest_upstream_process_header解析
+    //mytest_upstream_process_header，
+    //之后再收到的新字符流将由mytest_upstream_process_header解析
     u->process_header = mytest_upstream_process_header;
 
     //如果本次收到的字符流除了http响应行外，还有多余的字符，
-//将由mytest_upstream_process_header方法解析
+    //将由mytest_upstream_process_header方法解析
     return mytest_upstream_process_header(r);
 }
 
@@ -276,15 +276,15 @@ mytest_upstream_process_header(ngx_http_request_t *r)
     ngx_http_upstream_main_conf_t  *umcf;
 
     //这里将upstream模块配置项ngx_http_upstream_main_conf_t取了
-//出来，目的只有1个，对将要转发给下游客户端的http响应头部作统一
-//处理。该结构体中存储了需要做统一处理的http头部名称和回调方法
+    //出来，目的只有1个，对将要转发给下游客户端的http响应头部作统一
+    //处理。该结构体中存储了需要做统一处理的http头部名称和回调方法
     umcf = ngx_http_get_module_main_conf(r, ngx_http_upstream_module);
 
     //循环的解析所有的http头部
     for ( ;; )
     {
         // http框架提供了基础性的ngx_http_parse_header_line
-//方法，它用于解析http头部
+        //方法，它用于解析http头部
         rc = ngx_http_parse_header_line(r, &r->upstream->buffer, 1);
         //返回NGX_OK表示解析出一行http头部
         if (rc == NGX_OK)
@@ -338,7 +338,7 @@ mytest_upstream_process_header(ngx_http_request_t *r)
         }
 
         //返回NGX_HTTP_PARSE_HEADER_DONE表示响应中所有的http头部都解析
-//完毕，接下来再接收到的都将是http包体
+        //完毕，接下来再接收到的都将是http包体
         if (rc == NGX_HTTP_PARSE_HEADER_DONE)
         {
             //如果之前解析http头部时没有发现server和date头部，以下会
@@ -378,8 +378,8 @@ mytest_upstream_process_header(ngx_http_request_t *r)
         }
 
         //如果返回NGX_AGAIN则表示状态机还没有解析到完整的http头部，
-//要求upstream模块继续接收新的字符流再交由process_header
-//回调方法解析
+        //要求upstream模块继续接收新的字符流再交由process_header
+        //回调方法解析
         if (rc == NGX_AGAIN)
         {
             return NGX_AGAIN;
@@ -405,15 +405,7 @@ static char *
 ngx_http_mytest(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_core_loc_conf_t  *clcf;
-
-    //首先找到mytest配置项所属的配置块，clcf貌似是location块内的数据
-//结构，其实不然，它可以是main、srv或者loc级别配置项，也就是说在每个
-//http{}和server{}内也都有一个ngx_http_core_loc_conf_t结构体
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-
-    //http框架在处理用户请求进行到NGX_HTTP_CONTENT_PHASE阶段时，如果
-//请求的主机域名、URI与mytest配置项所在的配置块相匹配，就将调用我们
-//实现的ngx_http_mytest_handler方法处理这个请求
     clcf->handler = ngx_http_mytest_handler;
 
     return NGX_CONF_OK;
@@ -423,7 +415,6 @@ ngx_http_mytest(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 static ngx_int_t
 ngx_http_mytest_handler(ngx_http_request_t *r)
 {
-    //首先建立http上下文结构体ngx_http_mytest_ctx_t
     ngx_http_mytest_ctx_t* myctx = ngx_http_get_module_ctx(r, ngx_http_mytest_module);
     if (myctx == NULL)
     {
@@ -436,7 +427,7 @@ ngx_http_mytest_handler(ngx_http_request_t *r)
         ngx_http_set_ctx(r, myctx, ngx_http_mytest_module);
     }
     //对每1个要使用upstream的请求，必须调用且只能调用1次
-//ngx_http_upstream_create方法，它会初始化r->upstream成员
+    //ngx_http_upstream_create方法，它会初始化r->upstream成员
     if (ngx_http_upstream_create(r) != NGX_OK)
     {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "ngx_http_upstream_create() failed");
@@ -514,7 +505,6 @@ ngx_http_mytest_handler(ngx_http_request_t *r)
     r->main->count++;
     //启动upstream
     ngx_http_upstream_init(r);
-    //必须返回NGX_DONE
     return NGX_DONE;
 }
 
