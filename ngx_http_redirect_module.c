@@ -2,7 +2,6 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
-
 typedef struct
 {
     ngx_http_status_t           status;
@@ -14,7 +13,6 @@ typedef struct
     ngx_http_upstream_conf_t upstream;
     ngx_str_t addr;
 } ngx_http_redirect_conf_t;
-
 
 static char *
 ngx_http_redirect(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -144,7 +142,7 @@ static char *ngx_http_redirect_merge_loc_conf(ngx_conf_t *cf, void *parent, void
     hash.bucket_size = 1024;
     hash.name = "proxy_headers_hash";
     if (ngx_http_upstream_hide_headers_hash(cf, &conf->upstream,
-                                            &prev->upstream, ngx_http_proxy_hide_headers, &hash)
+        &prev->upstream, ngx_http_proxy_hide_headers, &hash)
         != NGX_OK)
     {
         return NGX_CONF_ERROR;
@@ -355,7 +353,7 @@ redirect_upstream_process_header(ngx_http_request_t *r)
                 }
 
                 h->hash = ngx_hash(ngx_hash(ngx_hash(ngx_hash(
-                                                         ngx_hash('s', 'e'), 'r'), 'v'), 'e'), 'r');
+                                   ngx_hash('s', 'e'), 'r'), 'v'), 'e'), 'r');
 
                 ngx_str_set(&h->key, "Server");
                 ngx_str_null(&h->value);
@@ -403,7 +401,6 @@ redirect_upstream_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
                   "redirect_upstream_finalize_request");
 }
 
-
 static char *
 ngx_http_redirect(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -411,9 +408,26 @@ ngx_http_redirect(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
     clcf->handler = ngx_http_redirect_handler;
 
+    ngx_http_redirect_conf_t *arcf = conf;
+    ngx_str_t *value;
+
+    if (arcf->addr.data != NULL) {
+        return "is duplicate";
+    }
+
+    value = cf->args->elts;
+
+    if (ngx_strcmp(value[1].data, "off") == 0) {
+        arcf->addr.len = 0;
+        arcf->addr.data = (u_char *) "";
+
+        return NGX_CONF_OK;
+    }
+
+    arcf->addr = value[1];
+
     return NGX_CONF_OK;
 }
-
 
 static ngx_int_t
 ngx_http_redirect_handler(ngx_http_request_t *r)
